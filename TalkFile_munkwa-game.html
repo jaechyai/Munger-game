@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="ko"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>문과의 이과침공</title>
+<style>
+:root{--bg:#111;--fg:#fff;--mut:#777;--btn:#222;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#111;--fg:#fff;--mut:#777;--btn:#222}}
+:root[data-theme="dark"]{--bg:#111;--fg:#fff;--mut:#777;--btn:#222}
+html,body{height:100%;margin:0;background:var(--bg);overflow:hidden;font-family:"Noto Sans KR",system-ui,sans-serif;color:var(--fg)}
+#w{height:100%;display:flex;align-items:center;justify-content:center}
+canvas{display:block;background:var(--bg)}
+button{font:inherit;color:var(--fg);background:var(--btn);border:1.5px solid var(--fg);border-radius:6px;padding:10px 14px;touch-action:none;user-select:none;-webkit-user-select:none}
+button:disabled{opacity:.35}.on{background:var(--fg);color:var(--bg)}
+.pad{position:fixed;display:flex;gap:10px;bottom:calc(12px + env(safe-area-inset-bottom,0px))}
+.pad button{width:72px;height:72px;border-radius:50%;opacity:.55;font-size:16px;padding:0}
+#tl{left:12px}#tr{right:12px}
+#tp{position:fixed;top:calc(8px + env(safe-area-inset-top,0px));right:10px;display:flex;gap:8px}
+#tp button{padding:6px 10px;font-size:13px}
+#ov{position:fixed;inset:0;background:rgba(0,0,0,.9);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;text-align:center;padding:16px;overflow:auto}
+#ov[hidden]{display:none}
+#ov h1,#ov h2{margin:0}#ov p{margin:0;color:#bbb;line-height:1.6;max-width:30em}
+.g{display:grid;gap:8px;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));width:min(560px,100%)}
+</style></head><body>
+<div id="w"><canvas id="c"></canvas></div>
+<div id="tp"><button id="bs">상점</button><button id="bc">제작</button><button id="bq">무기 교체</button></div>
+<div class="pad" id="tl"><button data-k="l">◀</button><button data-k="r">▶</button></div>
+<div class="pad" id="tr"><button data-k="a">공격</button><button data-k="j">점프</button></div>
+<div id="ov"></div>
+<script>
+const C=document.getElementById('c'),X=C.getContext('2d'),ov=document.getElementById('ov'),W=960,H=432,FL=392;
+C.width=W;C.height=H;
+function fit(){const s=Math.min(innerWidth/W,innerHeight/H);C.style.width=W*s+'px';C.style.height=H*s+'px'}
+addEventListener('resize',fit);fit();
+const R=(a,b)=>a+Math.random()*(b-a),RI=(a,b)=>Math.floor(R(a,b+1));
+const WP={fist:{n:'주먹',d:1,r:38,cd:.32},pencil:{n:'연필',d:2,r:64,cd:.38,p:40},pen:{n:'만년필(원거리)',d:2,r:0,cd:.45,rng:1,p:100},brush:{n:'붓',d:3,r:90,cd:.5,p:130},dict:{n:'국어사전',d:5,r:76,cd:.85,kb:1,p:200},knife:{n:'칼',d:4,r:62,cd:.26,j:'ㅋㅏㄹ'},spear:{n:'창',d:4,r:112,cd:.5,j:'ㅊㅏㅇ'},gun:{n:'총',d:3,rng:1,sp:760,cd:.28,j:'ㅊㅗㅇ'},bow:{n:'활(관통)',d:5,rng:1,sp:600,pr:1,cd:.6,j:'ㅎㅗㅏㄹ'},bomb:{n:'폭탄',d:7,b:1,aoe:100,cd:.9,j:'ㅍㅗㄱㅌㅏㄴ'},hangul:{n:'한글',d:9,r:150,cd:.75,kb:1,j:'ㅎㅏㄴㄱㅡㄹ'}};
+const ET=[{t:'π',hp:3,sp:55,s:30,v:8,dm:1},{t:'cos',hp:4,sp:65,s:24,v:10,dm:1},{t:'log',hp:6,sp:50,s:24,v:14,dm:1},{t:'√',hp:7,sp:95,s:30,v:18,dm:1},{t:'Σ',hp:10,sp:60,s:34,v:24,dm:2},{t:'∫',hp:14,sp:75,s:38,v:32,dm:2}];
+const SI=[{n:'체력 회복',p:30,f:()=>P.hp=P.mhp},{n:'최대 체력 +2',p:70,f:()=>{P.mhp+=2;P.hp+=2}},{n:'공격력 +1',p:100,f:()=>P.db++},{n:'커피 (이동속도 +12%)',p:60,f:()=>P.spm*=1.12}];
+const JP=[...'ㅋㅏㄹㅊㅗㅇㅎㄴㄱㅡㅍㅌㅏㅗㅇㄹㄴㄱ'],sig=a=>[...a].sort().join('');
+let st=0,L,pl,en,ch,sh,pa,po,paused=true,P;
+const K={},T={};
+function newP(){P={x:60,y:FL,vx:0,vy:0,w:22,h:28,face:1,hp:6,mhp:6,gnd:0,inv:0,cd:0,sw:0,kb:0,hit:null,wp:'fist',own:['fist'],jm:{},sl:[],fc:0,db:0,spm:1,money:0}}
+function gen(){L=2200+st*260;pl=[{x:0,y:FL,w:L,h:12,g:1}];
+for(let x=240;x<L-240;x+=RI(150,260))pl.push({x,y:RI(275,350),w:RI(110,200),h:8});
+const k=Math.min(ET.length,3+(st>>1)),hm=1+st*.22;en=[];
+for(let i=0;i<6+st*2;i++){const q=pl[RI(0,pl.length-1)],t=ET[RI(0,k-1)],x=Math.min(L-150,Math.max(300,q.x+R(10,q.w-10)));
+en.push({...t,x,y:q.y-2,vx:0,vy:0,hp:Math.ceil(t.hp*hm),mh:Math.ceil(t.hp*hm),w:t.s*.55*t.t.length+8,dir:1,pt:1,kb:0,fl:0,gnd:0})}
+ch=[];for(let i=0;i<3;i++){const q=pl[RI(1,pl.length-1)];ch.push({x:q.x+q.w/2,y:q.y,o:0})}
+sh=[];pa=[];po=[];P.x=60;P.y=FL;P.vx=P.vy=0;P.kb=0}
+function phys(e,dt){e.vy+=1500*dt;e.x+=e.vx*dt;const o=e.y;e.y+=e.vy*dt;e.gnd=0;
+if(e.vy>=0)for(const q of pl)if(e.x+e.w/2>q.x&&e.x-e.w/2<q.x+q.w&&o<=q.y+2&&e.y>=q.y){e.y=q.y;e.vy=0;e.gnd=1;break}
+e.x=Math.max(10,Math.min(L-10,e.x))}
+function hurt(e,d,f,kb){e.hp-=d;e.vx=f*(kb?340:180);e.vy=-160;e.kb=.25;e.fl=.1;
+if(e.hp<=0){P.money+=e.v;po.push({t:'+'+e.v+'원',x:e.x,y:e.y-e.s,l:1});for(let i=0;i<10;i++)pa.push({x:e.x,y:e.y-e.s/2,vx:R(-160,160),vy:R(-260,0),l:.7});en.splice(en.indexOf(e),1)}}
+function show(h,cb){ov.innerHTML=h;ov.hidden=false;paused=true;const g=ov.querySelector('#go');if(g)g.onclick=()=>{ov.hidden=true;paused=false;cb&&cb()}}
+function dead(){show('<h2>\'가\'가 쓰러졌다</h2><p>모아 둔 돈과 무기는 그대로예요. 이 스테이지를 다시 시작합니다.</p><button id="go">다시 도전</button>',()=>{P.hp=P.mhp;gen()})}
+function win(){show('<h2>이과 정복 완료</h2><p>8개 스테이지를 모두 돌파했어요.</p><button id="go">처음부터 다시</button>',()=>{st=0;newP();gen()})}
+function shop(){let h='<h2>상점</h2><p>보유 '+P.money+'원</p><div class="g">';
+for(const k in WP)if(!WP[k].j){const o=P.own.includes(k),w=WP[k];h+=`<button data-w="${k}" class="${P.wp==k?'on':''}" ${!o&&P.money<w.p?'disabled':''}>${w.n} · 피해 ${w.d}<br>${o?(P.wp==k?'장착 중':'장착'):w.p+'원'}</button>`}
+SI.forEach((s,i)=>h+=`<button data-i="${i}" ${P.money<s.p?'disabled':''}>${s.n}<br>${s.p}원</button>`);
+show(h+'</div><button id="go">닫기</button>')}
+ov.onclick=e=>{const b=e.target.closest('button');if(!b)return;
+if(b.dataset.w){const k=b.dataset.w;if(P.own.includes(k))P.wp=k;else if(P.money>=WP[k].p){P.money-=WP[k].p;P.own.push(k);P.wp=k}shop()}
+else if(b.dataset.i){const s=SI[b.dataset.i];if(P.money>=s.p){P.money-=s.p;s.f();s.p=Math.round(s.p*1.4)}shop()}else if(b.dataset.a){if(P.sl.length<6){P.sl.push(b.dataset.a);P.jm[b.dataset.a]--}craft()}else if(b.dataset.r){const c=P.sl.splice(+b.dataset.r,1)[0];if(c)P.jm[c]++;craft()}else if(b.dataset.m){const m=rec();if(m&&!P.own.includes(m)){P.sl=[];P.own.push(m);P.wp=m;cm=WP[m].n+' 제작 완료! 장착했어요.'}craft()}};
+let cm='';function rec(){return Object.keys(WP).find(k=>WP[k].j&&sig(WP[k].j)==sig(P.sl))}
+function craft(){const m=rec(),ow=m&&P.own.includes(m),t=cm;cm='';
+let h='<h2>제작</h2><p>글자를 눌러 제작 칸에 넣고 합치기를 누르세요. 순서는 상관없어요.</p><div class="g" style="grid-template-columns:repeat(6,1fr)">';
+for(let i=0;i<6;i++)h+=`<button data-r="${i}" style="min-height:48px;font-size:20px">${P.sl[i]||''}</button>`;
+h+='</div><p>'+(t||(m?(ow?WP[m].n+' — 이미 가지고 있어요':'→ '+WP[m].n):(P.sl.length?'알 수 없는 조합이에요':'&nbsp;')))+'</p><button data-m="1" '+(m&&!ow?'':'disabled')+'>합치기</button><div class="g" style="grid-template-columns:repeat(auto-fill,minmax(58px,1fr))">';
+for(const c in P.jm)if(P.jm[c]>0)h+=`<button data-a="${c}" style="font-size:18px">${c} ×${P.jm[c]}</button>`;
+h+='</div><p>레시피<br>'+Object.values(WP).filter(w=>w.j).map(w=>w.n+' = '+[...w.j].join(' + ')).join('<br>')+'</p><button id="go">닫기</button>';show(h)}
+function cyc(){if(!paused)P.wp=P.own[(P.own.indexOf(P.wp)+1)%P.own.length]}
+function pop(t,x,y){po.push({t,x,y,l:1.6})}
+function upd(dt){
+const lf=!!(K.KeyA||K.ArrowLeft||T.l),rt=!!(K.KeyD||K.ArrowRight||T.r),jp=K.Space||K.KeyW||K.ArrowUp||T.j,at=K.KeyJ||K.KeyZ||T.a;
+if(P.kb>0)P.kb-=dt;else{P.vx=(rt-lf)*190*P.spm;if(rt-lf)P.face=rt-lf}
+if(jp&&P.gnd)P.vy=-640;
+phys(P,dt);P.cd-=dt;P.inv-=dt;
+const w=WP[P.wp];
+if(at&&P.cd<=0){P.cd=w.cd;P.hit=new Set();if(w.rng||w.b)sh.push({x:P.x+P.face*12,y:P.y-16,vx:P.face*(w.sp||540)*(w.b?.6:1),vy:w.b?-380:0,d:w.d+P.db,l:w.b?1.4:1,b:w.b,aoe:w.aoe,pr:w.pr,h:new Set()});else P.sw=.14}
+if(P.sw>0){P.sw-=dt;const a=P.face>0?P.x:P.x-w.r-12,b=a+w.r+12;
+for(const e of [...en])if(!P.hit.has(e)&&e.x+e.w/2>a&&e.x-e.w/2<b&&e.y>P.y-40&&e.y-e.s<P.y+4){P.hit.add(e);hurt(e,w.d+P.db,P.face,w.kb)}}
+for(const s of sh){if(s.b){s.vy+=900*dt;s.y+=s.vy*dt}s.x+=s.vx*dt;s.l-=dt;let ex=0;
+for(const e of [...en])if(Math.abs(s.x-e.x)<e.w/2+4&&s.y>e.y-e.s-4&&s.y<e.y+4&&!s.h.has(e)){if(s.b){ex=1;break}hurt(e,s.d,Math.sign(s.vx));if(s.pr)s.h.add(e);else{s.l=0;break}}
+if(s.b&&(ex||s.y>=FL||s.l<=0||(s.vy>0&&pl.some(q=>s.x>q.x&&s.x<q.x+q.w&&s.y>=q.y&&s.y-s.vy*dt<=q.y+2)))){s.l=0;for(const e of [...en])if(Math.hypot(e.x-s.x,e.y-e.s/2-s.y)<s.aoe)hurt(e,s.d,Math.sign(e.x-s.x)||1,1);for(let i=0;i<14;i++)pa.push({x:s.x,y:s.y,vx:R(-220,220),vy:R(-300,0),l:.5})}}
+sh=sh.filter(s=>s.l>0);
+for(const e of en){e.fl-=dt;const dx=P.x-e.x;
+if(e.kb>0)e.kb-=dt;
+else if(Math.abs(dx)<320){e.vx=Math.sign(dx)*e.sp;if(e.gnd&&P.y<e.y-45&&Math.abs(dx)<90)e.vy=-560}
+else{e.vx=e.dir*e.sp*.4;e.pt-=dt;if(e.pt<0){e.dir*=-1;e.pt=R(1,3)}}
+phys(e,dt);
+if(P.inv<=0&&Math.abs(dx)<(P.w+e.w)/2&&P.y>e.y-e.s&&P.y-P.h<e.y){P.hp-=e.dm;P.inv=1;P.kb=.2;P.vx=-Math.sign(dx||1)*260;P.vy=-300;if(P.hp<=0){dead();return}}}
+for(const c of ch)if(!c.o&&Math.abs(P.x-c.x)<22&&Math.abs(P.y-c.y)<30){c.o=1;const gs=[];for(let i=0;i<3;i++){const j=P.fc?JP[RI(0,JP.length-1)]:'ㅋㅏㄹ'[i];gs.push(j);P.jm[j]=(P.jm[j]||0)+1}P.fc=1;pop('상자: '+gs.join(' ')+' 획득!',c.x,c.y-30);
+}
+if(P.x>L-60){st++;if(st>=8){win();return}P.hp=Math.min(P.mhp,P.hp+2);gen()}
+for(const q of pa){q.vy+=900*dt;q.x+=q.vx*dt;q.y+=q.vy*dt;q.l-=dt}pa=pa.filter(q=>q.l>0);
+for(const q of po){q.y-=30*dt;q.l-=dt}po=po.filter(q=>q.l>0)}
+function draw(){X.fillStyle='#111';X.fillRect(0,0,W,H);X.textAlign='center';
+const cam=Math.max(0,Math.min(L-W,P.x-W/2));X.save();X.translate(-cam,0);
+for(const q of pl){if(q.g){X.fillStyle='#e8e8e8';X.fillRect(q.x,q.y+12,q.w,H-q.y-12)}else{X.fillStyle='#777';X.fillRect(q.x+q.w/2-13,q.y+q.h,26,FL-q.y-q.h)}X.fillStyle='#fff';X.fillRect(q.x,q.y,q.w,q.h)}
+X.fillStyle='#fff';X.font='bold 34px sans-serif';X.fillText('문',L-40,FL-6);
+X.strokeStyle='#fff';X.lineWidth=2;
+for(const c of ch){if(c.o)X.strokeRect(c.x-12,c.y-4,24,4);else{X.strokeRect(c.x-12,c.y-16,24,16);X.beginPath();X.moveTo(c.x-12,c.y-9);X.lineTo(c.x+12,c.y-9);X.stroke()}}
+for(const e of en){X.font=`bold ${e.s}px serif`;X.fillStyle=e.fl>0?'#f66':'#fff';X.fillText(e.t,e.x,e.y-2);const bw=Math.max(24,e.w);X.fillStyle='#444';X.fillRect(e.x-bw/2,e.y-e.s-9,bw,4);X.fillStyle=e.fl>0?'#f66':'#fff';X.fillRect(e.x-bw/2,e.y-e.s-9,bw*Math.max(0,e.hp)/e.mh,4)}
+const w=WP[P.wp];
+if(P.sw>0&&!w.rng){X.globalAlpha=Math.max(0,P.sw/.14);X.lineWidth=2+w.d;X.beginPath();X.arc(P.x,P.y-16,w.r*.8+8,P.face>0?-1:Math.PI-1,P.face>0?1:Math.PI+1);X.stroke();X.globalAlpha=1}
+X.fillStyle='#fff';for(const s of sh){if(s.b){X.beginPath();X.arc(s.x,s.y,6,0,7);X.fill()}else X.fillRect(s.x-8,s.y-1.5,16,3)}
+if(!(P.inv>0&&Math.floor(P.inv*20)%2)){X.shadowColor='#fff';X.shadowBlur=14;X.fillStyle='#fff';X.font='bold 30px sans-serif';X.fillText('가',P.x,P.y-3);X.shadowBlur=0}
+X.font='italic 9px sans-serif';X.fillStyle='#ddd';X.fillText(P.hp+'/'+P.mhp,P.x,P.y-42);X.strokeStyle='#fff';X.lineWidth=1;X.strokeRect(P.x-17.5,P.y-37.5,35,5);X.fillRect(P.x-17,P.y-37,34*Math.max(0,P.hp)/P.mhp,4);
+for(const q of pa){X.globalAlpha=q.l;X.fillStyle='#fff';X.fillRect(q.x,q.y,4,4)}X.globalAlpha=1;
+X.font='bold 13px sans-serif';for(const q of po){X.globalAlpha=Math.min(1,q.l);X.fillStyle='#fff';X.fillText(q.t,q.x,q.y)}X.globalAlpha=1;
+X.restore();
+X.fillStyle='#fff';X.font='13px sans-serif';X.fillText('Stage '+(st+1)+' / 8',W/2,18);X.textAlign='left';X.fillText(P.money+'원 · '+w.n+(P.db?' (+'+P.db+')':'')+' · 자모 '+Object.values(P.jm).reduce((a,b)=>a+b,0),12,18);X.strokeStyle='#fff';X.lineWidth=1;X.strokeRect(12.5,26.5,160,10);X.fillRect(14,28,157*Math.max(0,P.hp)/P.mhp,7);X.textAlign='center'}
+let lt=0;function loop(t){const dt=Math.min(.033,(t-lt)/1000||0);lt=t;if(!paused)upd(dt);draw();requestAnimationFrame(loop)}
+addEventListener('keydown',e=>{K[e.code]=1;if(['Space','ArrowUp','ArrowDown'].includes(e.code))e.preventDefault();if(e.code=='KeyQ')cyc();if(e.code=='KeyB'&&!paused)shop();if(e.code=='KeyC'&&!paused)craft()});
+addEventListener('keyup',e=>K[e.code]=0);
+document.querySelectorAll('.pad button').forEach(b=>{const k=b.dataset.k;b.onpointerdown=e=>{e.preventDefault();T[k]=1};['pointerup','pointerleave','pointercancel'].forEach(ev=>b.addEventListener(ev,()=>T[k]=0))});
+document.getElementById('bs').onclick=()=>{if(!paused)shop()};document.getElementById('bq').onclick=cyc;document.getElementById('bc').onclick=()=>{if(!paused)craft()};
+newP();gen();
+show('<h1>문과의 이과침공</h1><p>\'가\'가 되어 수학 기호들을 물리치세요. 처치하면 원을 얻고, 상점에서 무기와 아이템을 사고, 상자에서 나온 자음·모음을 제작 칸에서 합쳐 새 무기를 만들 수 있어요. 오른쪽 끝의 \'문\'으로 들어가면 다음 스테이지입니다.</p><p>키보드: A/D 이동 · Space 점프 · J 공격 · Q 무기 교체 · B 상점 · C 제작<br>터치: 화면 아래 버튼 (가로 화면 권장)</p><button id="go">시작</button>');
+requestAnimationFrame(loop);
+</script></body></html>
